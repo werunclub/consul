@@ -231,7 +231,6 @@ You'll need:
    If you're running Consul Enterprise you'll need the rules:
 
    ```hcl
-   acl = "write"
    operator = "write"
    agent_prefix "" {
      policy = "read"
@@ -240,6 +239,7 @@ You'll need:
      policy = "write"
    }
    namespace_prefix "" {
+     acl = "write"
      service_prefix "" {
        policy = "read"
        intentions = "read"
