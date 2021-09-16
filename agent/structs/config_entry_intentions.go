@@ -535,12 +535,33 @@ func (e *ServiceIntentionsConfigEntry) HasAnyPermissions() bool {
 	return false
 }
 
-func (e *ServiceIntentionsConfigEntry) validate(legacyWrite bool) error {
-	if e.Name == "" {
-		return fmt.Errorf("Name is required")
+// Formats errors produced by validate. Examples:
+// - ('Destination', 'Name', 'my error') => 'intention validation error: Destination.Name: my error'
+// - ('Sources[0]', "", 'lorem ipsum')   => 'intention validation error: Sources[0]: lorem ipsum'
+func wrapValidationError(position string, field string, err error) error {
+	if err == nil {
+		return nil
 	}
 
-	if err := validateIntentionWildcards(e.Name, &e.EnterpriseMeta); err != nil {
+	invalidFieldString := ""
+	if field != "" {
+		invalidFieldString = "." + field
+	}
+
+	return fmt.Errorf("intention validation error: %s%s: %v", position, invalidFieldString, err)
+}
+
+func wrapValidationErrorString(position string, field string, errString string) error {
+	return wrapValidationError(position, field, fmt.Errorf(errString))
+}
+
+func (e *ServiceIntentionsConfigEntry) validate(legacyWrite bool) error {
+	if e.Name == "" {
+		return wrapValidationErrorString("Destination", "Name", "service name is required and cannot be empty")
+	}
+
+	// validateIntentionWildcards wraps errors itself
+	if err := validateIntentionWildcards(e.Name, &e.EnterpriseMeta, "Destination"); err != nil {
 		return err
 	}
 
@@ -548,26 +569,29 @@ func (e *ServiceIntentionsConfigEntry) validate(legacyWrite bool) error {
 
 	if legacyWrite {
 		if len(e.Meta) > 0 {
-			return fmt.Errorf("Meta must be omitted for legacy intention writes")
+			return wrapValidationErrorString("Destination", "Meta", "must be omitted for legacy intention writes")
 		}
 	} else {
 		if err := validateConfigEntryMeta(e.Meta); err != nil {
-			return err
+			return wrapValidationError("Destination", "Meta", err)
 		}
 	}
 
 	if len(e.Sources) == 0 {
-		return fmt.Errorf("At least one source is required")
+		return wrapValidationErrorString("Sources", "", "at least one source is required")
 	}
 
 	seenSources := make(map[ServiceName]struct{})
 	for i, src := range e.Sources {
+		position := fmt.Sprintf("Sources[%d]", i)
+
 		if src.Name == "" {
-			return fmt.Errorf("Sources[%d].Name is required", i)
+			return wrapValidationErrorString(position, "Name", "field is required and cannot be empty")
 		}
 
-		if err := validateIntentionWildcards(src.Name, &src.EnterpriseMeta); err != nil {
-			return fmt.Errorf("Sources[%d].%v", i, err)
+		// validateIntentionWildcards wraps errors itself
+		if err := validateIntentionWildcards(src.Name, &src.EnterpriseMeta, position); err != nil {
+			return err
 		}
 
 		if err := validateSourceIntentionEnterpriseMeta(&src.EnterpriseMeta, &e.EnterpriseMeta); err != nil {
@@ -576,57 +600,61 @@ func (e *ServiceIntentionsConfigEntry) validate(legacyWrite bool) error {
 
 		// Length of opaque values
 		if len(src.Description) > metaValueMaxLength {
-			return fmt.Errorf(
-				"Sources[%d].Description exceeds maximum length %d", i, metaValueMaxLength)
+			return wrapValidationErrorString(
+				position,
+				"Description",
+				fmt.Sprintf("exceeds maximum length %d", metaValueMaxLength),
+			)
 		}
 
 		if legacyWrite {
 			if len(src.LegacyMeta) > metaMaxKeyPairs {
-				return fmt.Errorf(
-					"Sources[%d].Meta exceeds maximum element count %d", i, metaMaxKeyPairs)
+				return wrapValidationErrorString(
+					position,
+					"Meta",
+					fmt.Sprintf("exceeds maximum element count %d", metaMaxKeyPairs),
+				)
 			}
 			for k, v := range src.LegacyMeta {
 				if len(k) > metaKeyMaxLength {
-					return fmt.Errorf(
-						"Sources[%d].Meta key %q exceeds maximum length %d",
-						i, k, metaKeyMaxLength,
+					return wrapValidationErrorString(
+						position,
+						"Meta",
+						fmt.Sprintf("key %q exceeds maximum length %d", k, metaKeyMaxLength),
 					)
 				}
 				if len(v) > metaValueMaxLength {
-					return fmt.Errorf(
-						"Sources[%d].Meta value for key %q exceeds maximum length %d",
-						i, k, metaValueMaxLength,
+					return wrapValidationErrorString(
+						position,
+						"Meta",
+						fmt.Sprintf("value for key %q exceeds maximum length %d", k, metaValueMaxLength),
 					)
 				}
 			}
 
 			if src.LegacyCreateTime == nil {
-				return fmt.Errorf("Sources[%d].LegacyCreateTime must be set", i)
+				return wrapValidationErrorString(position, "LegacyCreateTime", "must be set")
 			}
 			if src.LegacyUpdateTime == nil {
-				return fmt.Errorf("Sources[%d].LegacyUpdateTime must be set", i)
+				return wrapValidationErrorString(position, "LegacyUpdateTime", "must be set")
 			}
-		} else {
+			if src.LegacyID == "" {
+				return wrapValidationErrorString(position, "LegacyID", "must be set")
+			}
+		} else { // if !legacyWrite
 			if len(src.LegacyMeta) > 0 {
-				return fmt.Errorf("Sources[%d].LegacyMeta must be omitted", i)
+				return wrapValidationErrorString(position, "LegacyMeta", "must be omitted")
 			}
 			src.LegacyMeta = nil // ensure it's completely unset
 
 			if src.LegacyCreateTime != nil {
-				return fmt.Errorf("Sources[%d].LegacyCreateTime must be omitted", i)
+				return wrapValidationErrorString(position, "LegacyCreateTime", "must be omitted")
 			}
 			if src.LegacyUpdateTime != nil {
-				return fmt.Errorf("Sources[%d].LegacyUpdateTime must be omitted", i)
+				return wrapValidationErrorString(position, "LegacyUpdateTime", "must be omitted")
 			}
-		}
-
-		if legacyWrite {
-			if src.LegacyID == "" {
-				return fmt.Errorf("Sources[%d].LegacyID must be set", i)
-			}
-		} else {
 			if src.LegacyID != "" {
-				return fmt.Errorf("Sources[%d].LegacyID must be omitted", i)
+				return wrapValidationErrorString(position, "LegacyID", "must be omitted")
 			}
 		}
 
@@ -634,52 +662,63 @@ func (e *ServiceIntentionsConfigEntry) validate(legacyWrite bool) error {
 			switch src.Action {
 			case IntentionActionAllow, IntentionActionDeny:
 			default:
-				return fmt.Errorf("Sources[%d].Action must be set to 'allow' or 'deny'", i)
+				return wrapValidationErrorString(position, "Action", "must be set to 'allow' or 'deny'")
 			}
 		}
 
 		if len(src.Permissions) > 0 && src.Action != "" {
-			return fmt.Errorf("Sources[%d].Action must be omitted if Permissions are specified", i)
+			return wrapValidationErrorString(position, "Action", "must be omitted if Permissions are specified")
 		}
 
 		if destIsWild && len(src.Permissions) > 0 {
-			return fmt.Errorf("Sources[%d].Permissions cannot be specified on intentions with wildcarded destinations", i)
+			return wrapValidationErrorString(
+				position,
+				"Permissions",
+				"cannot be specified on intentions with wildcarded destinations",
+			)
 		}
 
 		switch src.Type {
 		case IntentionSourceConsul:
 		default:
-			return fmt.Errorf("Sources[%d].Type must be set to 'consul'", i)
+			return wrapValidationErrorString(position, "Type", "must be set to 'consul'")
 		}
 
 		for j, perm := range src.Permissions {
 			switch perm.Action {
 			case IntentionActionAllow, IntentionActionDeny:
 			default:
-				return fmt.Errorf("Sources[%d].Permissions[%d].Action must be set to 'allow' or 'deny'", i, j)
+				return wrapValidationErrorString(
+					position,
+					fmt.Sprintf("Permissions[%d].Action", j),
+					"must be set to 'allow' or 'deny'",
+				)
 			}
 
-			errorPrefix := "Sources[%d].Permissions[%d].HTTP"
+			errorFieldHTTP := fmt.Sprintf("Permissions[%d].HTTP", j)
+
 			if perm.HTTP == nil {
-				return fmt.Errorf(errorPrefix+" is required", i, j)
+				return wrapValidationErrorString(position, errorFieldHTTP, "field is required")
 			}
 
 			pathParts := 0
 			if perm.HTTP.PathExact != "" {
 				pathParts++
 				if !strings.HasPrefix(perm.HTTP.PathExact, "/") {
-					return fmt.Errorf(
-						errorPrefix+".PathExact doesn't start with '/': %q",
-						i, j, perm.HTTP.PathExact,
+					return wrapValidationErrorString(
+						position,
+						errorFieldHTTP+".PathExact",
+						fmt.Sprintf("doesn't start with '/': %q", perm.HTTP.PathExact),
 					)
 				}
 			}
 			if perm.HTTP.PathPrefix != "" {
 				pathParts++
 				if !strings.HasPrefix(perm.HTTP.PathPrefix, "/") {
-					return fmt.Errorf(
-						errorPrefix+".PathPrefix doesn't start with '/': %q",
-						i, j, perm.HTTP.PathPrefix,
+					return wrapValidationErrorString(
+						position,
+						errorFieldHTTP+".PathPrefix",
+						fmt.Sprintf("doesn't start with '/': %q", perm.HTTP.PathPrefix),
 					)
 				}
 			}
@@ -687,9 +726,10 @@ func (e *ServiceIntentionsConfigEntry) validate(legacyWrite bool) error {
 				pathParts++
 			}
 			if pathParts > 1 {
-				return fmt.Errorf(
-					errorPrefix+" should only contain at most one of PathExact, PathPrefix, or PathRegex",
-					i, j,
+				return wrapValidationErrorString(
+					position,
+					errorFieldHTTP,
+					"should only contain at most one of PathExact, PathPrefix, or PathRegex",
 				)
 			}
 
@@ -697,7 +737,11 @@ func (e *ServiceIntentionsConfigEntry) validate(legacyWrite bool) error {
 
 			for k, hdr := range perm.HTTP.Header {
 				if hdr.Name == "" {
-					return fmt.Errorf(errorPrefix+".Header[%d] missing required Name field", i, j, k)
+					return wrapValidationErrorString(
+						position,
+						fmt.Sprintf("%s.Header[%d]", errorFieldHTTP, k),
+						"missing required Name field",
+					)
 				}
 				hdrParts := 0
 				if hdr.Present {
@@ -716,7 +760,11 @@ func (e *ServiceIntentionsConfigEntry) validate(legacyWrite bool) error {
 					hdrParts++
 				}
 				if hdrParts != 1 {
-					return fmt.Errorf(errorPrefix+".Header[%d] should only contain one of Present, Exact, Prefix, Suffix, or Regex", i, j, k)
+					return wrapValidationErrorString(
+						position,
+						fmt.Sprintf("%s.Header[%d]", errorFieldHTTP, k),
+						"should only contain one of Present, Exact, Prefix, Suffix, or Regex",
+					)
 				}
 				permParts++
 			}
@@ -725,10 +773,18 @@ func (e *ServiceIntentionsConfigEntry) validate(legacyWrite bool) error {
 				found := make(map[string]struct{})
 				for _, m := range perm.HTTP.Methods {
 					if !isValidHTTPMethod(m) {
-						return fmt.Errorf(errorPrefix+".Methods contains an invalid method %q", i, j, m)
+						return wrapValidationErrorString(
+							position,
+							errorFieldHTTP+".Methods",
+							fmt.Sprintf("contains an invalid method %q", m),
+						)
 					}
 					if _, ok := found[m]; ok {
-						return fmt.Errorf(errorPrefix+".Methods contains %q more than once", i, j, m)
+						return wrapValidationErrorString(
+							position,
+							errorFieldHTTP+".Methods",
+							fmt.Sprintf("contains %q more than once", m),
+						)
 					}
 					found[m] = struct{}{}
 				}
@@ -736,13 +792,17 @@ func (e *ServiceIntentionsConfigEntry) validate(legacyWrite bool) error {
 			}
 
 			if permParts == 0 {
-				return fmt.Errorf(errorPrefix+" should not be empty", i, j)
+				return wrapValidationErrorString(position, errorFieldHTTP, "should not be empty")
 			}
 		}
 
 		serviceName := src.SourceServiceName()
 		if _, exists := seenSources[serviceName]; exists {
-			return fmt.Errorf("Sources[%d] defines %q more than once", i, serviceName.String())
+			return wrapValidationErrorString(
+				position,
+				"",
+				fmt.Sprintf("defines %q more than once", serviceName.String()),
+			)
 		}
 		seenSources[serviceName] = struct{}{}
 	}
@@ -751,24 +811,37 @@ func (e *ServiceIntentionsConfigEntry) validate(legacyWrite bool) error {
 }
 
 // Wildcard usage verification
-func validateIntentionWildcards(name string, entMeta *EnterpriseMeta) error {
+// position argument is passed to wrapValidationErrorString for better error messages
+func validateIntentionWildcards(name string, entMeta *EnterpriseMeta, position string) error {
 	ns := entMeta.NamespaceOrDefault()
 	if ns != WildcardSpecifier {
 		if strings.Contains(ns, WildcardSpecifier) {
-			return fmt.Errorf("Namespace: wildcard character '*' cannot be used with partial values")
+			return wrapValidationErrorString(
+				position,
+				"Namespace",
+				fmt.Sprintf("the wildcard character '*' must be used by itself, not in partial values (%q)", ns),
+			)
 		}
 	}
 	if name != WildcardSpecifier {
 		if strings.Contains(name, WildcardSpecifier) {
-			return fmt.Errorf("Name: wildcard character '*' cannot be used with partial values")
+			return wrapValidationErrorString(
+				position,
+				"Name",
+				fmt.Sprintf("the wildcard character '*' must be used by itself, not in partial values (%q)", name),
+			)
 		}
 
 		if ns == WildcardSpecifier {
-			return fmt.Errorf("Name: exact value cannot follow wildcard namespace")
+			return wrapValidationErrorString(
+				position,
+				"Name",
+				fmt.Sprintf("a non-wildcard service name (%q) cannot be used with a wildcard ('*') namespace", name),
+			)
 		}
 	}
 	if strings.Contains(entMeta.PartitionOrDefault(), WildcardSpecifier) {
-		return fmt.Errorf("Partition: cannot use wildcard '*' in partition")
+		return wrapValidationErrorString(position, "Partition", "cannot use wildcard '*' in partition")
 	}
 	return nil
 }
