@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"strings"
 
 	"github.com/hashicorp/consul/api"
 	"github.com/hashicorp/consul/command/flags"
@@ -78,8 +79,19 @@ func (c *cmd) Run(args []string) int {
 			return 1
 		}
 
+		var keyName strings.Builder
+		if c.prefix != "" {
+			keyName.WriteString(path.Join(c.prefix, entry.Key))
+			// Re-add trailing slash if previously present on key
+			if strings.HasSuffix(entry.Key, "/") {
+				keyName.WriteString("/")
+			}
+		} else {
+			keyName.WriteString(entry.Key)
+		}
+
 		pair := &api.KVPair{
-			Key:   path.Join(c.prefix, entry.Key),
+			Key:   keyName.String(),
 			Flags: entry.Flags,
 			Value: value,
 		}
