@@ -450,11 +450,8 @@ func (s *Server) initializeACLs(ctx context.Context) error {
 							ID: structs.ACLPolicyGlobalManagementID,
 						},
 					},
-					CreateTime: time.Now(),
-					Local:      false,
-
-					// DEPRECATED (ACL-Legacy-Compat) - only needed for compatibility
-					Type:           structs.ACLTokenTypeManagement,
+					CreateTime:     time.Now(),
+					Local:          false,
 					EnterpriseMeta: *structs.DefaultEnterpriseMetaInDefaultPartition(),
 				}
 
@@ -597,7 +594,7 @@ func (s *Server) legacyACLTokenUpgrade(ctx context.Context) error {
 				len(newToken.ServiceIdentities) == 0 &&
 				len(newToken.NodeIdentities) == 0 &&
 				len(newToken.Roles) == 0 &&
-				newToken.Type == structs.ACLTokenTypeManagement {
+				newToken.Type == "management" {
 				newToken.Policies = append(newToken.Policies, structs.ACLTokenPolicyLink{ID: structs.ACLPolicyGlobalManagementID})
 			}
 
