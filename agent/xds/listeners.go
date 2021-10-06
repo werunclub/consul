@@ -1256,7 +1256,14 @@ func (s *ResourceGenerator) makeUpstreamFilterChainForDiscoveryChain(
 	cfgSnap *proxycfg.ConfigSnapshot,
 ) (*envoy_listener_v3.FilterChain, error) {
 	// TODO (freddy) Make this actually legible
-	useRDS := true
+	var useRDS bool
+
+	// RDS, Envoy's Route Discovery Service, is only used for HTTP services with a customized
+	// discovery chain. Default HTTP chains have no routes, and TCP services can have customized chains
+	// when they redirect or fail-over to other services.
+	if chain != nil && !chain.IsDefault() && chain.Protocol != "tcp" {
+		useRDS = true
+	}
 
 	var (
 		clusterName                                   string
@@ -1268,8 +1275,6 @@ func (s *ResourceGenerator) makeUpstreamFilterChainForDiscoveryChain(
 		destination, datacenter, partition, namespace = chain.ServiceName, chain.Datacenter, chain.Partition, chain.Namespace
 	}
 	if (chain == nil || chain.IsDefault()) && u != nil && !u.CentrallyConfigured {
-		useRDS = false
-
 		if datacenter == "" {
 			datacenter = u.Datacenter
 		}
@@ -1291,8 +1296,6 @@ func (s *ResourceGenerator) makeUpstreamFilterChainForDiscoveryChain(
 
 	} else {
 		if protocol == "tcp" && chain != nil {
-			useRDS = false
-
 			target, err := tcpChainTarget(chain)
 			if err != nil {
 				return nil, err
@@ -1318,7 +1321,6 @@ func (s *ResourceGenerator) makeUpstreamFilterChainForDiscoveryChain(
 		filterName = id
 	}
 	if overrideCluster != "" {
-		useRDS = false
 		clusterName = overrideCluster
 
 		if destination == "" {
