@@ -907,7 +907,7 @@ type TLSConn interface {
 // Note this check is only performed if VerifyServerHostname is enabled, otherwise
 // it does no authorization.
 func (c *Configurator) AuthorizeServerConn(dc string, conn TLSConn) error {
-	if !c.VerifyServerHostname() {
+	if !c.VerifyIncomingRPC() || !c.VerifyServerHostname() {
 		return nil
 	}
 
