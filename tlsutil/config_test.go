@@ -491,19 +491,17 @@ func TestConfigurator_ErrorPropagation(t *testing.T) {
 			false, false}, // 12
 		{Config{VerifyOutgoing: true, CAFile: cafile, CAPath: capath},
 			false, false}, // 13
-		{Config{VerifyIncoming: true, CAFile: "", CAPath: ""}, true, false}, // 14
-		{Config{VerifyIncomingRPC: true, CAFile: "", CAPath: ""},
-			true, false}, // 15
+		{Config{VerifyIncomingRPC: true, CAFile: "", CAPath: ""}, true, false}, // 14
 		{Config{VerifyIncomingHTTPS: true, CAFile: "", CAPath: ""},
 			true, false}, // 16
-		{Config{VerifyIncoming: true, CAFile: cafile, CAPath: ""}, true, false}, // 17
-		{Config{VerifyIncoming: true, CAFile: "", CAPath: capath}, true, false}, // 18
-		{Config{VerifyIncoming: true, CAFile: "", CAPath: capath,
+		{Config{VerifyIncomingRPC: true, CAFile: cafile, CAPath: ""}, true, false}, // 17
+		{Config{VerifyIncomingRPC: true, CAFile: "", CAPath: capath}, true, false}, // 18
+		{Config{VerifyIncomingRPC: true, CAFile: "", CAPath: capath,
 			CertFile: certfile, KeyFile: keyfile}, false, false}, // 19
-		{Config{CertFile: "bogus", KeyFile: "bogus"}, true, true},                   // 20
-		{Config{CAFile: "bogus"}, true, true},                                       // 21
-		{Config{CAPath: "bogus"}, true, true},                                       // 22
-		{Config{VerifyIncoming: true, CAFile: cafile, AutoTLS: true}, false, false}, // 22
+		{Config{CertFile: "bogus", KeyFile: "bogus"}, true, true},                      // 20
+		{Config{CAFile: "bogus"}, true, true},                                          // 21
+		{Config{CAPath: "bogus"}, true, true},                                          // 22
+		{Config{VerifyIncomingRPC: true, CAFile: cafile, AutoTLS: true}, false, false}, // 22
 	}
 	for _, v := range tlsVersions() {
 		variants = append(variants, variant{Config{TLSMinVersion: v}, false, false})
@@ -920,7 +918,7 @@ func TestConfigurator_IncomingHTTPSConfig(t *testing.T) {
 	})
 
 	t.Run("verify incoming", func(t *testing.T) {
-		c := Configurator{base: &Config{VerifyIncoming: true}}
+		c := Configurator{base: &Config{VerifyIncomingRPC: true}}
 
 		cfg := c.IncomingHTTPSConfig()
 
@@ -1158,8 +1156,8 @@ func TestConfigurator_UpdateChecks(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, c.Update(Config{}))
 	require.Error(t, c.Update(Config{VerifyOutgoing: true}))
-	require.Error(t, c.Update(Config{VerifyIncoming: true, CAFile: "../test/ca/root.cer"}))
-	require.False(t, c.base.VerifyIncoming)
+	require.Error(t, c.Update(Config{VerifyIncomingRPC: true, CAFile: "../test/ca/root.cer"}))
+	require.False(t, c.base.VerifyIncomingRPC)
 	require.False(t, c.base.VerifyOutgoing)
 	require.Equal(t, uint64(2), c.version)
 }

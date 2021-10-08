@@ -46,10 +46,7 @@ var tlsLookup = map[string]uint16{
 
 // Config used to create tls.Config
 type Config struct {
-	// VerifyIncoming is used to verify the authenticity of incoming
-	// connections.  This means that TCP requests are forbidden, only
-	// allowing for TLS. TLS connections must match a provided certificate
-	// authority. This can be used to force client auth.
+	// TODO: remove
 	VerifyIncoming bool
 
 	// VerifyIncomingRPC is used to verify the authenticity of incoming RPC
@@ -81,11 +78,11 @@ type Config struct {
 	VerifyServerHostname bool
 
 	// CAFile is a path to a certificate authority file. This is used with
-	// VerifyIncoming or VerifyOutgoing to verify the TLS connection.
+	// VerifyIncoming{RPC,HTTPS} or VerifyOutgoing to verify the TLS connection.
 	CAFile string
 
 	// CAPath is a path to a directory containing certificate authority
-	// files. This is used with VerifyIncoming or VerifyOutgoing to verify
+	// files. This is used with VerifyIncoming{RPC,HTTPS} or VerifyOutgoing to verify
 	// the TLS connection.
 	CAPath string
 
@@ -385,7 +382,7 @@ func validateConfig(config Config, pool *x509.CertPool, cert *tls.Certificate) e
 	}
 
 	// Ensure we have a CA and cert if VerifyIncoming is set
-	if config.anyVerifyIncoming() {
+	if config.VerifyIncomingRPC || config.VerifyIncomingHTTPS {
 		if pool == nil {
 			// both auto-config and auto-encrypt require verifying the connection from the client to the server for secure
 			// operation. In order to be able to verify the servers certificate we must have some CA certs already provided.
@@ -402,10 +399,6 @@ func validateConfig(config Config, pool *x509.CertPool, cert *tls.Certificate) e
 		}
 	}
 	return nil
-}
-
-func (c Config) anyVerifyIncoming() bool {
-	return c.VerifyIncoming || c.VerifyIncomingRPC || c.VerifyIncomingHTTPS
 }
 
 func loadKeyPair(certFile, keyFile string) (*tls.Certificate, error) {
@@ -544,7 +537,7 @@ func (c *Configurator) Cert() *tls.Certificate {
 func (c *Configurator) VerifyIncomingRPC() bool {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
-	return c.base.VerifyIncoming || c.base.VerifyIncomingRPC
+	return c.base.VerifyIncomingRPC
 }
 
 // This function acquires a read lock because it reads from the config.
@@ -674,7 +667,7 @@ func (c *Configurator) IncomingHTTPSConfig() *tls.Config {
 	c.log("IncomingHTTPSConfig")
 
 	c.lock.RLock()
-	verifyIncoming := c.base.VerifyIncoming || c.base.VerifyIncomingHTTPS
+	verifyIncoming := c.base.VerifyIncomingHTTPS
 	c.lock.RUnlock()
 
 	config := c.commonTLSConfig(verifyIncoming)
